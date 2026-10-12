@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8000
+  },
+  "race": {
+    "target_distance": 500.0,
+    "base_speed": 2.0,
+    "max_speed": 40.0,
+    "tick_rate": 20,
+    "auto_restart_delay_sec": 10,
+    "red_team_name": "Equipe Vermelha",
+    "green_team_name": "Equipe Verde"
+  },
+  "tiktok": {
+    "unique_id": "",
+    "enabled": false,
+    "reconnect_interval_sec": 5,
+    "max_reconnect_attempts": 5
+  }
+}
