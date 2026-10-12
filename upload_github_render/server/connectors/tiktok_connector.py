@@ -147,7 +147,7 @@ class TikTokConnector(BaseConnector):
 
                 # Start client connection
                 # In TikTokLive, connect() is an async coroutine
-                await client.connect()
+                await client.connect(fetch_live_check=False)
 
                 # If connection finishes cleanly while still wanting to run
                 if self._should_run:
