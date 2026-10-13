@@ -145,9 +145,16 @@ class TikTokConnector(BaseConnector):
                     except Exception as ex:
                         logger.error(f"Error handling comment event: {ex}")
 
-                # Start client connection
-                # In TikTokLive, connect() is an async coroutine
-                await client.connect(fetch_live_check=False)
+                # Obter room_id diretamente pela API para evitar bloqueio 403 de scraping HTML
+                resolved_room_id = None
+                try:
+                    resolved_room_id = await client._web.fetch_room_id_from_api(self.account_id)
+                    logger.info(f"Room ID detectado com sucesso via API: {resolved_room_id}")
+                except Exception as ex_api:
+                    logger.debug(f"Tentando fallback padrao para room_id: {ex_api}")
+
+                # Start client connection com fetch_live_check=False para conexao IMEDIATA
+                await client.connect(room_id=resolved_room_id, fetch_live_check=False)
 
                 # If connection finishes cleanly while still wanting to run
                 if self._should_run:
