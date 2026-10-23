@@ -1,0 +1,63 @@
+{
+  "unknown_gift_policy": {
+    "log_event": true,
+    "award_points": false
+  },
+  "rules": [
+    {
+      "id": "rose",
+      "name": "Rose",
+      "aliases": ["rosa", "rose", "5655"],
+      "target_team": "red",
+      "meters_per_unit": 5.0,
+      "boost_duration_sec": 3.0,
+      "speed_multiplier": 1.5,
+      "enabled": true,
+      "description": "Impulsiona a Equipe Vermelha (+5m por unidade)"
+    },
+    {
+      "id": "tiktok",
+      "name": "TikTok",
+      "aliases": ["tiktok", "logo tiktok", "5269"],
+      "target_team": "green",
+      "meters_per_unit": 5.0,
+      "boost_duration_sec": 3.0,
+      "speed_multiplier": 1.5,
+      "enabled": true,
+      "description": "Impulsiona a Equipe Verde (+5m por unidade)"
+    },
+    {
+      "id": "heart",
+      "name": "Heart",
+      "aliases": ["coracao", "coração", "heart"],
+      "target_team": "red",
+      "meters_per_unit": 20.0,
+      "boost_duration_sec": 4.5,
+      "speed_multiplier": 2.0,
+      "enabled": true,
+      "description": "Super impulso para a Equipe Vermelha (+20m por unidade)"
+    },
+    {
+      "id": "cap",
+      "name": "Cap",
+      "aliases": ["bone", "boné", "cap"],
+      "target_team": "green",
+      "meters_per_unit": 20.0,
+      "boost_duration_sec": 4.5,
+      "speed_multiplier": 2.0,
+      "enabled": true,
+      "description": "Super impulso para a Equipe Verde (+20m por unidade)"
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks",
+      "aliases": ["fogos", "fireworks", "foguete"],
+      "target_team": "alternate",
+      "meters_per_unit": 50.0,
+      "boost_duration_sec": 6.0,
+      "speed_multiplier": 2.5,
+      "enabled": true,
+      "description": "Mega impulso alternando entre as equipes (+50m por unidade)"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: zynvex-corrida-tiktok
+    env: python
+    plan: free
+    region: ohio
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn server.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: TIKTOK_SIGN_API_KEY
+        value: euler_Yjc4MzQ0ZmRiZDgyNTU1YjczMTQwN2UxY2VhOGM5ZGYxMjk1NDFhMzNhZGU0NWIxNGI5MmJj
