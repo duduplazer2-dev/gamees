@@ -1328,6 +1328,13 @@ async def serve_politics_tower_direct():
 
 # Jogo 7: BOB ESPONJA IA - Live Interativa (Chat & Voz)
 BOB_DIR = os.path.join(BASE_DIR, "live_ia_bob")
+BOB_STANDALONE_DIR = os.path.join(BASE_DIR, "bob")
+if os.path.exists(BOB_STANDALONE_DIR):
+    try:
+        app.mount("/bob", StaticFiles(directory=BOB_STANDALONE_DIR, html=True), name="bob")
+    except Exception as e:
+        logger.warning(f"Aviso ao montar /bob: {e}")
+
 if os.path.exists(BOB_DIR):
     BOB_STATIC_DIR = os.path.join(BOB_DIR, "static")
     if os.path.exists(BOB_STATIC_DIR):
@@ -1344,8 +1351,6 @@ if os.path.exists(BOB_DIR):
     except Exception as e:
         logger.warning(f"Erro ao montar sub-app Bob Esponja: {e}")
 
-@app.get("/bob")
-@app.get("/bob/")
 @app.get("/bobesponja")
 @app.get("/bobesponja/")
 @app.get("/ia_bob")
@@ -1370,3 +1375,76 @@ async def serve_bob_direct():
 
 
 
+
+
+from fastapi.responses import Response
+
+@app.post("/api/bob/tts")
+@app.get("/api/bob/tts")
+async def tts_bob_endpoint(req: Request, text: Optional[str] = None):
+    text_to_speak = text or ""
+    if not text_to_speak and req.method == "POST":
+        try:
+            body = await req.json()
+            text_to_speak = body.get("text", "")
+        except Exception:
+            pass
+
+    text_to_speak = (text_to_speak or "").strip()
+    if not text_to_speak:
+        text_to_speak = "Oi! Eu sou o Bob Esponja! Iahahaha!"
+
+    key = os.getenv("FISH_AUDIO_API_KEY", "sk-fish--o1IkSudiJCCdjLQGajVYUXI-YMsxsAtGzBS8KcG0sI")
+    model = os.getenv("FISH_AUDIO_MODEL_ID", "01b057e7592b4b97a6963423f91f5e22")
+
+    try:
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {key.strip()}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text_to_speak,
+            "reference_id": model.strip(),
+            "format": "mp3"
+        }
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            resp = await client.post("https://api.fish.audio/v1/tts", headers=headers, json=payload)
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                return Response(
+                    content=resp.content,
+                    media_type="audio/mpeg",
+                    headers={
+                        "Cache-Control": "public, max-age=86400",
+                        "Access-Control-Allow-Origin": "*"
+                    }
+                )
+    except Exception as ex:
+        logger.warning(f"Erro ao gerar TTS Fish Audio: {ex}")
+
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(
+            text=text_to_speak,
+            voice="pt-BR-AntonioNeural",
+            pitch="+32Hz",
+            rate="+12%"
+        )
+        audio_chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_chunks.append(chunk["data"])
+        if audio_chunks:
+            full_audio = b"".join(audio_chunks)
+            return Response(
+                content=full_audio,
+                media_type="audio/mpeg",
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Allow-Origin": "*"
+                }
+            )
+    except Exception as ex2:
+        logger.warning(f"Erro fallback Edge-TTS: {ex2}")
+
+    raise HTTPException(status_code=500, detail="Erro ao gerar áudio")

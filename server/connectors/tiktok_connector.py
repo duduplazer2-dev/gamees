@@ -139,38 +139,12 @@ class TikTokConnector(BaseConnector):
                 client = TikTokLiveClient(unique_id=self.account_id)
                 self._client = client
 
-                # -----------------------------------------------------------------
-                # 1. RESOLUÇÃO DIRETA DE ROOM ID VIA API TIKTOK (SUPORTE TOTAL A TIKTOK LIVE STUDIO)
-                # -----------------------------------------------------------------
                 self.status = ConnectorStatus.CONNECTING
-                self.dispatch_status("connecting", self.account_id)
-                logger.info(f"Resolvendo transmissão ao vivo para @{self.account_id}...")
-
-                resolved_room_id = None
-                try:
-                    resolved_room_id = await client._web.fetch_room_id_from_api(self.account_id)
-                    logger.info(f"🟢 Room ID detectado com sucesso: {resolved_room_id}")
-                except UserNotFoundError:
-                    self.status = ConnectorStatus.ERROR
-                    self.last_error = f"A conta @{self.account_id} não foi encontrada no TikTok. Verifique o @ digitado."
-                    logger.warning(self.last_error)
-                    self.dispatch_status("error", self.account_id, self.last_error)
-                    await asyncio.sleep(10.0)
-                    continue
-                except Exception as ex_room:
-                    logger.debug(f"Aviso de resolução de Room ID: {ex_room}")
-
-                if not resolved_room_id:
-                    # Se não encontrou Room ID ativo, aguarda e tenta novamente sem travar
-                    self.status = ConnectorStatus.CONNECTING
-                    self.last_error = f"Aguardando a Live de @{self.account_id} no TikTok..."
-                    logger.info(self.last_error)
-                    self.dispatch_status("connecting", self.account_id, self.last_error)
-                    await asyncio.sleep(8.0)
-                    continue
+                self.dispatch_status("connecting", self.account_id, f"Conectando à LIVE de @{self.account_id}...")
+                logger.info(f"Conectando à LIVE de @{self.account_id}...")
 
                 # -----------------------------------------------------------------
-                # 3. REGISTRO DE EVENTOS (CONNECT, DISCONNECT, GIFT, COMMENT)
+                # REGISTRO DE EVENTOS (CONNECT, DISCONNECT, GIFT, COMMENT, LIKE, FOLLOW)
                 # -----------------------------------------------------------------
                 @client.on(ConnectEvent)
                 async def on_connect(event: ConnectEvent):
@@ -185,7 +159,7 @@ class TikTokConnector(BaseConnector):
                     if self._should_run:
                         self.status = ConnectorStatus.CONNECTING
                         logger.warning(f"Desconectado da LIVE de @{self.account_id}. Loop reconectará...")
-                        self.dispatch_status("connecting", self.account_id)
+                        self.dispatch_status("connecting", self.account_id, "Desconectado. Reconectando...")
 
                 @client.on(GiftEvent)
                 async def on_gift(event: GiftEvent):
@@ -225,7 +199,6 @@ class TikTokConnector(BaseConnector):
                 if SocialEvent is not None:
                     @client.on(SocialEvent)
                     async def on_social(event: SocialEvent):
-                        # SocialEvent no TikTok é acionado para seguir o anfitrião e compartilhamento
                         await _handle_follow_payload(event, "SOCIAL_FOLLOW")
 
                 @client.on(CommentEvent)
@@ -243,11 +216,11 @@ class TikTokConnector(BaseConnector):
                         comment_key = f"{user.lower().strip()}:{norm}"
                         if not hasattr(self, "_recent_comments"):
                             self._recent_comments = {}
-                        if comment_key in self._recent_comments and (now_time - self._recent_comments[comment_key]) < 1.5:
+                        if comment_key in self._recent_comments and (now_time - self._recent_comments[comment_key]) < 1.0:
                             return
                         self._recent_comments[comment_key] = now_time
-                        if len(self._recent_comments) > 250:
-                            self._recent_comments = {k: v for k, v in self._recent_comments.items() if (now_time - v) < 4.0}
+                        if len(self._recent_comments) > 300:
+                            self._recent_comments = {k: v for k, v in self._recent_comments.items() if (now_time - v) < 3.0}
 
                         if any(k in norm for k in ["segui", "seguir", "seguiu", "follow", "followed", "sdv"]):
                             logger.info(f"[CHAT FOLLOW] {user} seguiu a live via chat: {text}")
@@ -276,69 +249,63 @@ class TikTokConnector(BaseConnector):
                             logger.info(f"[CHAT VOTE 22] {user} votou Azul/22: {text}")
                             self.dispatch_chat_vote("green", str(user), 1, text)
                         else:
-                            # Encaminha comentários gerais e escolhas de veículos do jogo de carros (gol, 160, pop, chevette, xre, uno, opala, bmw, ferrari, fusca, kombi, biz, saveiro)
+                            # Encaminha comentários gerais para o Bob Esponja e outros jogos
                             self.dispatch_chat_vote("vehicle_choice", str(user), 1, text)
                     except Exception as ex:
                         logger.error(f"Erro ao processar comentário do chat: {ex}")
 
                 # -----------------------------------------------------------------
-                # 4. CONEXÃO COM O STREAMING VIA EULERSTREAM
+                # CONEXÃO DIRETA COM O STREAMING VIA EULERSTREAM
                 # -----------------------------------------------------------------
-                self.dispatch_status("connecting", self.account_id)
+                room_id_override = int(self.account_id) if self.account_id.isdigit() else None
                 logger.info(f"Iniciando conexão Webcast para @{self.account_id}...")
-                await client.connect(room_id=resolved_room_id, fetch_live_check=False)
+                await client.connect(room_id=room_id_override, fetch_live_check=False)
 
-                # Se a conexão finalizar normalmente enquanto ainda estiver habilitado:
+                # Se a conexão finalizar de forma limpa enquanto ainda ativo:
                 if self._should_run:
                     self._reconnect_count += 1
-                    # Checa se a live encerrou
-                    still_live = False
-                    try:
-                        still_live = await client._web.fetch_is_live(unique_id=self.account_id)
-                    except Exception:
-                        still_live = False
-
-                    if not still_live:
-                        self.status = ConnectorStatus.CONNECTING
-                        self.last_error = f"A LIVE de @{self.account_id} foi encerrada ou pausada. Aguardando transmissão..."
-                        logger.info(self.last_error)
-                        self.dispatch_status("connecting", self.account_id, self.last_error)
-                        await asyncio.sleep(10.0)
-                    else:
-                        backoff = min(15.0, 5.0 + min(self._reconnect_count, 4) * 2.0)
-                        logger.warning(f"Conexão oscilou. Reconectando em {backoff:.1f}s...")
-                        await asyncio.sleep(backoff)
+                    backoff = min(15.0, 5.0 + min(self._reconnect_count, 4) * 2.0)
+                    logger.info(f"Conexão Webcast finalizada. Reconectando em {backoff:.1f}s...")
+                    await asyncio.sleep(backoff)
 
             except asyncio.CancelledError:
                 break
+            except UserOfflineError:
+                self.status = ConnectorStatus.CONNECTING
+                self.last_error = f"A conta @{self.account_id} está OFFLINE no TikTok. Aguardando a live começar..."
+                logger.info(self.last_error)
+                self.dispatch_status("connecting", self.account_id, self.last_error)
+                await asyncio.sleep(5.0)
+            except UserNotFoundError:
+                self.status = ConnectorStatus.ERROR
+                self.last_error = f"A conta @{self.account_id} não foi encontrada no TikTok. Verifique o @"
+                logger.warning(self.last_error)
+                self.dispatch_status("error", self.account_id, self.last_error)
+                await asyncio.sleep(8.0)
             except Exception as e:
                 err_msg = str(e)
                 err_lower = err_msg.lower()
 
-                # -----------------------------------------------------------------
-                # 5. PROTEÇÃO CONTRA RATE LIMIT (429 EULERSTREAM)
-                # -----------------------------------------------------------------
-                if "rate_limit" in err_lower or "too many connections" in err_lower or "429" in err_msg:
+                if "rate_limit" in err_lower or "429" in err_msg or "too many connections" in err_lower:
                     self.status = ConnectorStatus.ERROR
-                    self.last_error = "OFFLINE"
-                    logger.warning(f"TikTok rate limit ou pausa temporária: {err_msg}")
-                    self.dispatch_status("error", self.account_id, "OFFLINE")
-                    await asyncio.sleep(20.0)
+                    self.last_error = "Limite de conexões do EulerStream. Aguardando 15s..."
+                    logger.warning(f"EulerStream rate limit: {err_msg}")
+                    self.dispatch_status("error", self.account_id, self.last_error)
+                    await asyncio.sleep(15.0)
                 elif "offline" in err_lower or "useroffline" in err_lower:
-                    self.status = ConnectorStatus.ERROR
-                    self.last_error = "OFFLINE"
-                    logger.info(f"Streamer @{self.account_id} está offline no momento.")
-                    self.dispatch_status("error", self.account_id, "OFFLINE")
-                    await asyncio.sleep(10.0)
+                    self.status = ConnectorStatus.CONNECTING
+                    self.last_error = f"A conta @{self.account_id} está OFFLINE no TikTok. Aguardando a live começar..."
+                    logger.info(self.last_error)
+                    self.dispatch_status("connecting", self.account_id, self.last_error)
+                    await asyncio.sleep(5.0)
                 else:
-                    self.status = ConnectorStatus.ERROR
-                    self.last_error = "OFFLINE"
-                    logger.error(f"Erro no conector TikTok: {err_msg}")
-                    self.dispatch_status("error", self.account_id, "OFFLINE")
+                    self.status = ConnectorStatus.CONNECTING
+                    self.last_error = f"Aguardando a live de @{self.account_id}... ({err_msg[:60]})"
+                    logger.warning(f"Reconectando conector TikTok: {err_msg}")
+                    self.dispatch_status("connecting", self.account_id, self.last_error)
                     self._reconnect_count += 1
-                    backoff = min(20.0, 8.0 + min(self._reconnect_count, 4) * 3.0)
+                    backoff = min(15.0, 5.0 + min(self._reconnect_count, 4) * 2.0)
                     await asyncio.sleep(backoff)
-
             finally:
                 if client is not None:
                     try:

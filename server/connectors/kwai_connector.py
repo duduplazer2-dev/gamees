@@ -4,7 +4,10 @@ import time
 import re
 import json
 from typing import Any, Callable, Dict, Optional
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 from .base_connector import BaseConnector, ConnectorStatus
 
@@ -30,7 +33,7 @@ class KwaiConnector(BaseConnector):
         self.reconnect_interval_sec = reconnect_interval_sec
         self._task: Optional[asyncio.Task] = None
         self._should_run = False
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: Optional[Any] = None
         self.platform = "kwai"
         self.live_stream_id: str = ""
         self.author_name: str = ""
@@ -103,6 +106,12 @@ class KwaiConnector(BaseConnector):
         logger.info(f"Conector Kwai LIVE para {self.account_id} desconectado.")
 
     async def _run_loop(self, parsed_target: Dict[str, str]) -> None:
+        if aiohttp is None:
+            self.status = ConnectorStatus.ERROR
+            self.last_error = "Biblioteca aiohttp não instalada."
+            self.dispatch_status("error", self.account_id, self.last_error)
+            return
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
